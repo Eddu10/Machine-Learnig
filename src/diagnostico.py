@@ -5,7 +5,7 @@ import os
 import csv
 import time
 
-nombre_archivo = 'prueba.txt'
+nombre_archivo = 'mesa_cursores.txt'
 ruta_completa = os.path.join('..', 'data', 'raw', nombre_archivo)
 
 def analizar():
@@ -13,7 +13,7 @@ def analizar():
         print(f"No encuentro el archivo en: {ruta_completa}")
         return None
     
-    print("Iniciando la lectura de prueba (500 filas)...")
+    print("Iniciando la lectura de prueba (100 filas)...")
     tiempo_inicio = time.time()
     
     tamaño_bloque = 10
@@ -23,7 +23,7 @@ def analizar():
     try:
         #500 filas iniciales
         lector_datos = pd.read_csv(ruta_completa,
-                         nrows=50,
+                         nrows=500,
                          chunksize=tamaño_bloque,
                          sep = ',', 
                          encoding = 'utf-8', 
