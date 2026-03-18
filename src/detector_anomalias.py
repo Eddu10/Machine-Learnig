@@ -1,123 +1,82 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Mar 16 14:47:56 2026
-
-@author: psistemaspl
-"""
 
 import pandas as pd
-import os
-import csv
 import matplotlib.pyplot as plt
+import urllib
+from sqlalchemy import create_engine
 from sklearn.ensemble import IsolationForest
 
+print("Iniciando detector")
 
-nombre_archivo = 'test_2.txt'
-ruta_completa =os.path.join('..', 'data', 'raw', nombre_archivo)
+#conf conexion
+NOMBRE_BD = 'TestAnomalias'
+NOMBRE_SERVIDOR = 'localhost'
 
-def detector_anomalias():
-    print("Cargando datos historicos....")
-    
-    #carga y limpieza
-    df = pd.read_csv(ruta_completa,
-                     sep=',', 
-                     encoding='utf-8',
-                     skiprows=[1],
-                     quoting=csv.QUOTE_NONE,
-                     on_bad_lines='skip')
-    
-    df.columns = df.columns.str.strip()
-    
-    #buscamos la columna de tiempo
-    col_tiempo = None
-    for col in df.columns:
-        if 'time' in col.lower() or 'date' in col.lower():
-            col_tiempo = col
-            break
-        
-    if col_tiempo:
-        df[col_tiempo] = pd.to_datetime(df[col_tiempo], errors='coerce')
-        df = df.dropna(subset=[col_tiempo])
-      
-        print(f"Filas con tiempo válido: {len(df)}")
-        
+def detector_anomalias_sql():
+    print("Conectando a la BD...")
+
+    try:
+        #conexion sql server
+        params = urllib.parse.quote_plus(
+            r'Driver={SQL Server};'
+            fr'Server={NOMBRE_SERVIDOR};'
+            fr'Database={NOMBRE_BD};'
+            r'Trusted_Connection=yes;'
+        )
+        motor_sql = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+
+        #descarga de datos
+        print("leyendo las señales...")
+        query = "SELECT * FROM Señal ORDER BY fecha_hora ASC"
+        df = pd.read_sql(query, con=motor_sql)
+
         if len(df) == 0:
-            print("ERROR CRÍTICO: La tabla quedó vacía tras limpiar el tiempo.")
-            return None # Abortar misión para no saturar a la IA
-    else:
-        print("No se detecto columna de tiempo")
-        return None
-    
-    
-        
-    #preparacion ia
-    print("Preparando datos para ia")
-    
-    #columnas_sensores = df.select_dtypes(include=['float64', 'int64']).columns
-    #df_sensores = df[columnas_sensores].dropna()
-    columnas_sensores = df.columns.drop(col_tiempo)
-    for col in columnas_sensores:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    
-    df = df.dropna()
-    
-    #preparacion ia
-    print("Preparando datos para ia")
-    df_sensores = df[columnas_sensores]
-    
-    #entrenamiento modelo isolation forest
-    print("Entrenando el algoritmo IF")
-    
-    modelo=IsolationForest(n_estimators=100, contamination=0.01, random_state=42)
-    
-    #analiza los datos
-    df_sensores['Anomalia'] = modelo.fit_predict(df_sensores)
-    
-    #union en la tabla
-    df_final = df.loc[df_sensores.index].copy()
-    df_final['Anomalia'] = df_sensores['Anomalia']
-    
-    #resultados 1-normal, -1-anomalia
-    normales = len(df_final[df_final['Anomalia'] == 1])
-    anomalos = len(df_final[df_final['Anomalia'] == -1])
-    print(f"¡Análisis completado! Datos normales: {normales} | Anomalías detectadas: {anomalos}")
-    
-   
-    #grafica de resusltados
-   
-    print("Generando gráfica con detecciones en todas las señales")
-    
-    #filtro para graficar
-    df_normal = df_final[df_final['Anomalia'] == 1]
-    df_peligro = df_final[df_final['Anomalia'] == -1]
-    
-    plt.figure(figsize=(25, 10))
-    
-    eje_x_normal = df_normal[col_tiempo] if col_tiempo else df_normal.index
-    eje_x_peligro = df_peligro[col_tiempo] if col_tiempo else df_peligro.index
-    
-    for sensor in columnas_sensores:
-        plt.plot(eje_x_normal, df_normal[sensor], linestyle='-', marker='', alpha=0.5, label=f'Normal {sensor}')
-        plt.plot(eje_x_peligro, df_peligro[sensor], linestyle='none', marker='o', color='red', markersize=6)
-    
+            print("La tabla esta vacia")
+            return None
 
-    plt.title('Detector de IA: Anomalias en todos los sensores', fontsize=18)
-    plt.xlabel('Tiempo', fontsize=14)
-    plt.ylabel('Valor del sensor', fontsize=14)
-    
-    plt.xticks(rotation=60, ha='right')
-    
-    plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left')
-    plt.grid(True)
-    plt.tight_layout()
-    
-    """ruta_foto = os.path.abspath('anomalias_detectadas.png')
-    plt.savefig(ruta_foto, dpi=300, bbox_inches='tight')
-    print(f"¡FOTO DE ANOMALÍAS GUARDADA EN: {ruta_foto}")"""
-    
-    plt.show()
-    
-    return df_final
-    
+        print(f"Se cargaron {len(df)} registros correctamente")
+
+        df['fecha_hora'] = pd.to_datetime(df['fecha_hora'])
+
+        #preparacion de la ia
+        print("Preparando datos para IA...")
+        columnas_sensores = df.columns.drop('fecha_hora')
+        df_sensores = df[columnas_sensores].dropna()
+
+        #entrenamiento del modelo
+        print("Entrenando algoritmo IF...")
+        modelo = IsolationForest(n_estimators=100, contamination=0.01, random_state=42)
+
+        #analiza datos
+        df['anomalia_detectada'] = modelo.fit_predict(df_sensores)
+
+        normales = len(df['anomalia_detectada'] == 1)
+        anomalos = len(df['anomalia_detectada'] == -1)
+        print(f"Normales: {normales} | Anomalías: {anomalos}")
+
+        #grafica
+        print("Genrando grafica...")
+        df_normal = df[df['anomalia_detectada'] == 1]
+        df_peligro = df[df[df['anomalia_detectada'] == -1]]
+
+        plt.figure(figsize=(30, 15))
+
+        for sensor in columnas_sensores:
+            plt.plot(df_normal['fecha_hora'], df_normal[sensor], linestyle='-', marker='', alpha=0.5, label=f'Normal {sensor}')
+            plt.plot(df_peligro['fecha_hora'], df_peligro[sensor], lenestyle='none', marker='o', color='red', markersize=6)
+
+        plt.title('Detector de IA: Anomalias en todos los sensores')
+        plt.xlabel('Hora', fontsize=14)
+        plt.ylabel('Valor', fontsize=14)
+        plt.xticks(rotation=75, ha='rigth')
+        plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left')
+        plt.grid(True)
+        plt.tight_layout
+        plt.show()
+
+        return df
+    except Exception as e:
+        print(f"Error de conexion o proceso: {e}")
+        return None
+
 if __name__ == "__main__":
-    datos_analizados = detector_anomalias()
+    datos_analizados = detector_anomalias_sql()
