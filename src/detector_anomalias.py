@@ -1,6 +1,7 @@
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import urllib
 from sqlalchemy import create_engine
 from sklearn.ensemble import IsolationForest
@@ -10,6 +11,8 @@ print("Iniciando detector")
 #conf conexion
 NOMBRE_BD = 'TestAnomalias'
 NOMBRE_SERVIDOR = 'localhost'
+USUARIO = 'sa'
+CONTRASENA = 'root'
 
 def detector_anomalias_sql():
     print("Conectando a la BD...")
@@ -17,10 +20,11 @@ def detector_anomalias_sql():
     try:
         #conexion sql server
         params = urllib.parse.quote_plus(
-            r'Driver={SQL Server};'
+            r'Driver={ODBC Driver 17 for SQL Server};'
             fr'Server={NOMBRE_SERVIDOR};'
             fr'Database={NOMBRE_BD};'
-            r'Trusted_Connection=yes;'
+            fr'UID={USUARIO};'
+            fr'PWD={CONTRASENA};'
         )
         motor_sql = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
@@ -49,28 +53,29 @@ def detector_anomalias_sql():
         #analiza datos
         df['anomalia_detectada'] = modelo.fit_predict(df_sensores)
 
-        normales = len(df['anomalia_detectada'] == 1)
-        anomalos = len(df['anomalia_detectada'] == -1)
+        normales = len(df[df['anomalia_detectada'] == 1])
+        anomalos = len(df[df['anomalia_detectada'] == -1])
         print(f"Normales: {normales} | Anomalías: {anomalos}")
 
         #grafica
-        print("Genrando grafica...")
+        print("Generando grafica...")
         df_normal = df[df['anomalia_detectada'] == 1]
-        df_peligro = df[df[df['anomalia_detectada'] == -1]]
+        df_peligro = df[df['anomalia_detectada'] == -1]
 
-        plt.figure(figsize=(30, 15))
+        plt.figure(figsize=(25, 10))
 
         for sensor in columnas_sensores:
             plt.plot(df_normal['fecha_hora'], df_normal[sensor], linestyle='-', marker='', alpha=0.5, label=f'Normal {sensor}')
-            plt.plot(df_peligro['fecha_hora'], df_peligro[sensor], lenestyle='none', marker='o', color='red', markersize=6)
+            plt.plot(df_peligro['fecha_hora'], df_peligro[sensor], linestyle='none', marker='o', color='red', markersize=6)
 
         plt.title('Detector de IA: Anomalias en todos los sensores')
         plt.xlabel('Hora', fontsize=14)
         plt.ylabel('Valor', fontsize=14)
-        plt.xticks(rotation=75, ha='rigth')
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+        plt.xticks(rotation=75, ha='right')
         plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left')
         plt.grid(True)
-        plt.tight_layout
+        plt.tight_layout()
         plt.show()
 
         return df
