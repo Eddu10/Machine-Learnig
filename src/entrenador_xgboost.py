@@ -12,7 +12,7 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-print("Iniciando entrenamineto XGBOOT")
+print("Iniciando entrenamiento XGBOOST")
 print("-" * 60)
 
 NOMBRE_SERVIDOR = 'localhost'
@@ -36,7 +36,7 @@ params = urllib.parse.quote_plus(
 motor_sql = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
 print("Descargando historial de sensores continuos...")
-consulta = """ SELECT DISTINCT s.*
+consulta = """ SELECT DISTINCT s.*, 0 as rn
             FROM Señal s
             INNER JOIN registro_fallas f
                 ON s.fecha_hora >= DATEADD(minute, -20, f.Fecha)
@@ -70,14 +70,6 @@ paras_planificadas = df_fallas[df_fallas['Planificacion'] == 'PLANIFICADA']
 print(f"   -> Encontradas {len(fallas_reales)} fallas reales")
 print(f"   -> Encontradas {len(paras_planificadas)} paras planificadas")
 
-#Por cada falla, regresamos un poco el tiempo
-for indice, falla in fallas_reales.iterrows():
-    h_inicio = falla['Fecha'] - pd.Timedelta(minutes=MINUTOS_PREVIOS)
-    h_fin = falla['hora_fin']
-
-    mascara_tiempo = (df_senal['fecha_hora'] >= h_inicio) & (df_senal['fecha_hora'] <= h_fin)
-    df_senal.loc[mascara_tiempo, 'estado_maquina'] = falla['Causa']
-
 #ignorar fallas planiicadas
 for indice, para in paras_planificadas.iterrows():
     h_inicio = para['Fecha'] - pd.Timedelta(minutes=MINUTOS_PREVIOS)
@@ -86,9 +78,19 @@ for indice, para in paras_planificadas.iterrows():
     mascara_tiempo = (df_senal['fecha_hora'] >= h_inicio) & (df_senal['fecha_hora'] <= h_fin)
     df_senal.loc[mascara_tiempo, 'estado_maquina'] = 'IGNORAR'
 
+#Por cada falla, regresamos un poco el tiempo
+for indice, falla in fallas_reales.iterrows():
+    h_inicio = falla['Fecha'] - pd.Timedelta(minutes=MINUTOS_PREVIOS)
+    h_fin = falla['hora_fin']
+
+    mascara_tiempo = (df_senal['fecha_hora'] >= h_inicio) & (df_senal['fecha_hora'] <= h_fin)
+    df_senal.loc[mascara_tiempo, 'estado_maquina'] = falla['Causa']
+
 #limpieza final
 df_senal = df_senal[df_senal['estado_maquina'] != 'IGNORAR'].copy()
 print("Se eliminaron registros contaminados por paras planificadas.")
+
+df_senal[COLUMNAS_SENSORES] = df_senal[COLUMNAS_SENSORES].astype('float32')
 
 print('\nDistribucion de estados aprendidos')
 print(df_senal['estado_maquina'].value_counts())
@@ -99,10 +101,16 @@ codificador = LabelEncoder()
 df_senal['target_numerico'] = codificador.fit_transform(df_senal['estado_maquina'])
 clases_detectadas = codificador.classes_
 
+if len(clases_detectadas) < 2:
+    print("\n❌ ERROR CRÍTICO DE DATOS: La IA detectó que el 100% de los datos son 'Normales'.")
+    print("No se encontraron fallas reales en los datos descargados.")
+    print("Revisa que las fechas en 'registro_fallas' coincidan exactamente con las fechas en 'Señal'.")
+    exit() # Detenemos el programa antes de que explote
+
 print("\nCalculando Promedios de normalidad")
 df_normal = df_senal[df_senal['estado_maquina'] == 'Normal']
 promedios_normales = df_normal[COLUMNAS_SENSORES].mean().to_dict()
-print(f"Valores normales detectados: {promedios_normales}")
+#print(f"Valores normales detectados: {promedios_normales}")
 joblib.dump(promedios_normales, 'promedios_normales.pkl')
 
 X = df_senal[COLUMNAS_SENSORES]
@@ -110,9 +118,10 @@ y = df_senal['target_numerico']
 #80% para entrenar, 20% para examen final
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-#entrenamineto xgboost
+#entrenamiento xgboost
 print(f"\n Entrenando red XGBOOST para reconocer {len(clases_detectadas)} estados...")
 modelo_xgb = xgb.XGBClassifier(
+    tree_method='hist',
     n_estimators=150,
     learning_rate=0.1,
     max_depth=6,
@@ -122,7 +131,7 @@ modelo_xgb = xgb.XGBClassifier(
 modelo_xgb.fit(X_train, y_train)
 
 #evaluacion y exportacion
-print("\n Evalundo precision del modelo...")
+print("\n Evaluando precision del modelo...")
 predicciones = modelo_xgb.predict(X_test)
 precision = accuracy_score(y_test, predicciones)
 print(f"Precision Global: {precision * 100:.2f}%\n")
@@ -136,7 +145,8 @@ joblib.dump(codificador, 'traductor_etiquetas.pkl')
 #graficos
 print("\n Generando graficas de analisis...")
 ax = xgb.plot_importance(modelo_xgb, importance_type='weight', max_num_features=10,
-                         height=0.5, title='Ranking: Sensores Críticos')
+                         height=0.5, title='Ranking: Sensores Críticos'
+                        )
 
 fig_importancia = ax.figure
 fig_importancia.set_size_inches(12, 6)
