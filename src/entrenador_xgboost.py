@@ -84,7 +84,7 @@ for indice, falla in fallas_reales.iterrows():
     h_fin = falla['hora_fin']
 
     mascara_tiempo = (df_senal['fecha_hora'] >= h_inicio) & (df_senal['fecha_hora'] <= h_fin)
-    df_senal.loc[mascara_tiempo, 'estado_maquina'] = falla['Causa']
+    df_senal.loc[mascara_tiempo, 'estado_maquina'] = falla['Clase']
 
 #limpieza final
 df_senal = df_senal[df_senal['estado_maquina'] != 'IGNORAR'].copy()
@@ -93,6 +93,17 @@ print("Se eliminaron registros contaminados por paras planificadas.")
 df_senal[COLUMNAS_SENSORES] = df_senal[COLUMNAS_SENSORES].astype('float32')
 
 print('\nDistribucion de estados aprendidos')
+print(df_senal['estado_maquina'].value_counts())
+
+#agrupacion de fallas
+print("\nAgrupando fallas menores...")
+top_fallas = fallas_reales['Clase'].value_counts().nlargest(10).index.tolist()
+
+#lista de las fallas mas comunes
+clases_comunes = ['Normal'] + top_fallas
+df_senal.loc[~df_senal['estado_maquina'].isin(clases_comunes), 'estado_maquina'] = 'OTRA_FALLA'
+
+print('\nDistribucion de estados optimizados')
 print(df_senal['estado_maquina'].value_counts())
 
 #preparacion xgboost
