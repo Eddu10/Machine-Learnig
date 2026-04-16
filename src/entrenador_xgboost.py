@@ -141,7 +141,7 @@ modelo_xgb = xgb.XGBClassifier(
 )
 modelo_xgb.fit(X_train, y_train)
 
-#evaluacion y exportacion
+#evaluacion y exportacion del modelo
 print("\n Evaluando precision del modelo...")
 predicciones = modelo_xgb.predict(X_test)
 precision = accuracy_score(y_test, predicciones)
