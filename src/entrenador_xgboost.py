@@ -152,6 +152,8 @@ print(classification_report(y_test, predicciones, target_names=clases_detectadas
 print(" Exportando la IA al disco duro...")
 joblib.dump(modelo_xgb, 'cerebro_xgboost.pkl')
 joblib.dump(codificador, 'traductor_etiquetas.pkl')
+joblib.dump(X_test, 'datos_examen_X.pkl')
+joblib.dump(y_test, 'datos_examen_y.pkl')
 
 #graficos
 print("\n Generando graficas de analisis...")
