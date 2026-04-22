@@ -17,7 +17,7 @@ st.markdown("---")
 
 @st.cache_resource
 def cargar_inteligencia():
-    motor_sql = create_engine(f"mssql+pyodbc:///?odbc_cpnnect={urllib.parse.quote_plus(r'DRIVER={ODBC Driver 17 for SQL Server}; SERVER=localhost;DATABASE=TestAnomalias;UID=sa;PWD=root;')}")
+    motor_sql = create_engine(f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(r'DRIVER={ODBC Driver 17 for SQL Server}; SERVER=localhost;DATABASE=TestAnomalias;UID=sa;PWD=root;')}")
     modelo = joblib.load('cerebro_xgboost.pkl')
     codificador = joblib.load('traductor_etiquetas.pkl')
     promedios = joblib.load('promedios_normales.pkl')
